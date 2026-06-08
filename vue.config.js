@@ -6,6 +6,7 @@ module.exports = {
       builderOptions: {
         appId: 'dev.sparklecat.moontweaks.launcher',
         productName: 'Moon Tweaks',
+        artifactName: 'Moon-Tweaks-Setup-${version}.${ext}',
         win: {
           target: 'nsis',
           icon: 'build/icons/win/icon.ico',
