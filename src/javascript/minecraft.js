@@ -35,7 +35,24 @@ export async function setupLunarClientDirectory() {
     icon: 'fa-solid fa-folder',
   });
 
-  const folders = ['licenses', 'offline', 'jre', 'moontweaks'];
+  const folders = [
+    {
+      name: 'licenses',
+      path: join(constants.DOTLUNARCLIENT, 'licenses'),
+    },
+    {
+      name: 'offline',
+      path: join(constants.DOTLUNARCLIENT, 'offline'),
+    },
+    {
+      name: 'jre',
+      path: join(constants.DOTLUNARCLIENT, 'jre'),
+    },
+    {
+      name: 'moontweaks',
+      path: constants.MOONTWEAKS_DIR,
+    },
+  ];
 
   await mkdir(constants.DOTLUNARCLIENT, { recursive: true })
     .then(() => {
@@ -49,20 +66,29 @@ export async function setupLunarClientDirectory() {
   logger.debug('Checking .lunarclient subdirectories');
 
   for (const [index, folder] of folders.entries()) {
-
     // Launch state
     store.commit('setLaunchingState', {
       title: 'LAUNCHING...',
-      message: `CHECKING SUBFOLDERS ${index + 1}/${folders.length}`,
+      message: `CHECKING ${folder.name.toUpperCase()} FOLDER ${index + 1}/${folders.length}...`,
       icon: 'fa-solid fa-folder',
     });
 
-    await mkdir(join(constants.DOTLUNARCLIENT, folder), {
-      recursive: true,
-    }).catch((error) => {
-      logger.error(`Can't create ${folder} subdirectory`, error);
+    logger.debug(`Checking ${folder.path}`);
+    await mkdir(folder.path, { recursive: true }).catch((error) => {
+      logger.error(`Can't create ${folder.name} subdirectory`, error);
       throw error;
     });
+
+    const folderStat = await stat(folder.path).catch((error) => {
+      logger.error(`Can't stat ${folder.name} subdirectory`, error);
+      throw error;
+    });
+
+    if (!folderStat.isDirectory()) {
+      const error = new Error(`${folder.path} exists but is not a directory`);
+      logger.error(error.message);
+      throw error;
+    }
   }
 }
 
@@ -749,55 +775,65 @@ export async function checkAndLaunch(serverIp = null) {
     return;
   }
 
-  if (!(await settings.get('skipChecks'))) {
-    // Check JRE
-    await checkJRE();
+  try {
+    if (!(await settings.get('skipChecks'))) {
+      // Check JRE
+      await checkJRE();
 
-    // Check game directory
-    await setupLunarClientDirectory();
+      // Check game directory
+      await setupLunarClientDirectory();
 
-    // Check licenses
-    await checkLicenses(metadata);
+      // Check licenses
+      await checkLicenses(metadata);
 
-    // Check game files
-    await checkGameFiles(metadata);
+      // Check game files
+      await checkGameFiles(metadata);
 
-    // Check natives
-    await checkNatives(metadata);
+      // Check natives
+      await checkNatives(metadata);
 
-    // Check LC assets
-    await downloadLunarAssets(metadata);
+      // Check LC assets
+      await downloadLunarAssets(metadata);
 
-    // Check patcher
-    await checkPatcher().catch((error) =>
-      logger.error('Failed to check patcher, skipping patcher check.', error)
-    );
+      // Check patcher
+      await checkPatcher().catch((error) =>
+        logger.error('Failed to check patcher, skipping patcher check.', error)
+      );
 
-    // Patcher config
-    await checkPatcherConfig().catch(() =>
-      logger.error(
-        'Failed to check patcher config, is GitHub down? Have we messed up while publishing the release? Skipping patcher check.'
-      )
-    );
+      // Patcher config
+      await checkPatcherConfig().catch(() =>
+        logger.error(
+          'Failed to check patcher config, is GitHub down? Have we messed up while publishing the release? Skipping patcher check.'
+        )
+      );
+    }
+
+    // Update patcher config file
+    await patchGame();
+
+    // Launch game
+    await launchGame(metadata, serverIp, await settings.get('debugMode'));
+
+    // Trackers
+    const version = await settings.get('version');
+    await axios
+      .post(`${constants.API_URL}${constants.ENDPOINTS.LAUNCH}`, {
+        item: 'launcher',
+        version: version === '1.18' ? '1.18.1' : version,
+      })
+      .catch((error) =>
+        logger.warn(
+          "Failed to track launcher launch, ignoring it, it's not important.",
+          error
+        )
+      );
+  } catch (error) {
+    logger.error('Launch checks failed', error);
+    store.commit('setLaunchingState', {
+      title: 'Error',
+      message: error?.message ?? 'Launch failed',
+      icon: 'fa-solid fa-exclamation-triangle',
+    });
+    store.commit('setLaunching', false);
   }
-
-  // Update patcher config file
-  await patchGame();
-
-  // Launch game
-  await launchGame(metadata, serverIp, await settings.get('debugMode'));
-
-  // Trackers
-  const version = await settings.get('version');
-  await axios
-    .post(`${constants.API_URL}${constants.ENDPOINTS.LAUNCH}`, {
-      item: 'launcher',
-      version: version === '1.18' ? '1.18.1' : version,
-    })
-    .catch((error) =>
-      logger.warn(
-        "Failed to track launcher launch, ignoring it, it's not important.",
-        error
-      )
-    );
 }
