@@ -61,6 +61,10 @@
 <script>
 import settings from 'electron-settings';
 import { checkAndLaunch } from '../../javascript/minecraft';
+import {
+  getInstalledLunarVersions,
+  getVersionBackground,
+} from '../../javascript/lunar';
 import Logger from '../../javascript/logger';
 import { updateActivity } from '../../javascript/discord';
 
@@ -72,38 +76,7 @@ export default {
   data: () => ({
     isSelectingVersion: false,
     isLaunching: false,
-    availableVersions: [
-      {
-        version: '1.18',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_18.bb8fd4ac31.webp',
-      },
-      {
-        version: '1.17',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_17.1632241780.webp',
-      },
-      {
-        version: '1.16',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_16.47f82f804b.webp',
-      },
-      {
-        version: '1.12',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_12.4d900e6ec3.webp',
-      },
-      {
-        version: '1.8',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_8.1a68214027.webp',
-      },
-      {
-        version: '1.7',
-        background:
-          'https://launcherimages.lunarclientcdn.com/versions/1_7.148c077787.webp',
-      },
-    ],
+    availableVersions: [],
   }),
 
   methods: {
@@ -137,9 +110,19 @@ export default {
         icon: 'fa-solid fa-gamepad',
       });
     },
+
+    async loadAvailableVersions() {
+      const versions = await getInstalledLunarVersions();
+      const fallbackVersions = versions.length > 0 ? versions : ['1.8'];
+      this.availableVersions = fallbackVersions.map((version) => ({
+        version,
+        background: getVersionBackground(version),
+      }));
+    },
   },
 
   async mounted() {
+    await this.loadAvailableVersions();
     // Timeout because when first launch there is no version set
     setTimeout(async () => await this.updateLaunchButton(), 150);
   },

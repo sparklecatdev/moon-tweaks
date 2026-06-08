@@ -10,12 +10,13 @@
         <div id="shortcut-content-version">
           <span>Version: </span>
           <select v-model="version">
-            <option value="1.7">1.7</option>
-            <option selected value="1.8">1.8</option>
-            <option value="1.12">1.12</option>
-            <option value="1.16">1.16</option>
-            <option value="1.17">1.17</option>
-            <option value="1.18">1.18</option>
+            <option
+              v-for="availableVersion in availableVersions"
+              v-bind:key="availableVersion"
+              :value="availableVersion"
+            >
+              {{ availableVersion }}
+            </option>
           </select>
         </div>
         <div id="shortcut-content-server">
@@ -48,6 +49,7 @@
 
 <script>
 import { createShortcut } from '../javascript/shortcut';
+import { getInstalledLunarVersions } from '../javascript/lunar';
 
 export default {
   name: 'CreateShortcut',
@@ -56,12 +58,21 @@ export default {
     name: 'Solar Tweaks (shortcut)',
     version: '1.8',
     server: null,
+    availableVersions: ['1.8'],
   }),
 
   methods: {
     _createShortcut() {
       createShortcut(this.name, this.version, this.server);
     },
+  },
+
+  async beforeMount() {
+    const versions = await getInstalledLunarVersions();
+    if (versions.length > 0) {
+      this.availableVersions = versions;
+      this.version = versions[0];
+    }
   },
 };
 </script>

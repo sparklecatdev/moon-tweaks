@@ -314,7 +314,10 @@ import { remote } from 'electron';
 import settings from 'electron-settings';
 import { totalmem, platform } from 'os';
 import { join } from 'path';
-import { defaultSettings } from '../../javascript/settings';
+import {
+  getDefaultJrePath,
+  getDefaultLaunchDirectories,
+} from '../../javascript/settings';
 import axios from 'axios';
 import { cache } from '../../main';
 import {
@@ -437,7 +440,7 @@ export default {
      * Reset the launch directories to their default values
      */
     async resetLaunchDirectories() {
-      this.directories = defaultSettings.launchDirectories;
+      this.directories = await getDefaultLaunchDirectories();
       await settings.set('launchDirectories', this.directories);
     },
 
@@ -498,8 +501,8 @@ export default {
      * Reset JRE path
      */
     async resetJrePath() {
-      this.jrePath = defaultSettings.jrePath;
-      await settings.set('jrePath', defaultSettings.jrePath);
+      this.jrePath = await getDefaultJrePath();
+      await settings.set('jrePath', this.jrePath);
     },
 
     /**

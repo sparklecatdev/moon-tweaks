@@ -14,6 +14,11 @@ import { downloadLunarAssets } from './assets';
 import { disableRPC, login as connectRPC, updateActivity } from './discord';
 import { downloadAndSaveFile } from './downloader';
 import fs from './fs';
+import {
+  getCurrentOsRelease,
+  getInstallationId,
+  getLauncherVersion,
+} from './lunar';
 import Logger, { createMinecraftLogger } from './logger';
 
 const logger = new Logger('launcher');
@@ -130,9 +135,13 @@ export async function checkJRE() {
 /**
  * Fetches metadata from Lunar's API
  * @param {boolean} [skipLaunchingState=false] Skip or not the launching state
+ * @param {string} [overrideVersion=null] Minecraft version override
  * @returns {Promise<Object>}
  */
-export async function fetchMetadata(skipLaunchingState = false) {
+export async function fetchMetadata(
+  skipLaunchingState = false,
+  overrideVersion = null
+) {
   if (!skipLaunchingState) {
     // Launch state
     store.commit('setLaunchingState', {
@@ -145,21 +154,31 @@ export async function fetchMetadata(skipLaunchingState = false) {
   // Fetch metadata
   logger.info('Fetching metadata...');
   const machineId = await _machineId();
-  const version = await settings.get('version');
+  const version = overrideVersion ?? (await settings.get('version'));
+  const installationId = await getInstallationId();
+  const launcherVersion = await getLauncherVersion();
   return new Promise((resolve, reject) => {
     axios
       .post(
         constants.links.LC_METADATA_ENDPOINT,
         {
           hwid: machineId,
+          installation_id: installationId,
           os: process.platform,
+          os_release: getCurrentOsRelease(),
           arch: arch(),
           version: version,
           branch: 'master',
           launch_type: 'OFFLINE',
-          classifier: 'optifine',
         },
-        { 'Content-Type': 'application/json', 'User-Agent': 'SolarTweaks' }
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': launcherVersion
+              ? `Lunar Client/${launcherVersion}`
+              : 'SolarTweaks',
+          },
+        }
       )
       .then((response) => {
         logger.debug('Fetched metadata');
@@ -167,7 +186,15 @@ export async function fetchMetadata(skipLaunchingState = false) {
       })
       .catch((error) => {
         logger.error('Failed to fetch metadata', error);
-        reject(error);
+        const launcherError = error?.response?.data?.error;
+        reject(
+          new Error(
+            launcherError?.message ??
+              launcherError?.short ??
+              error.message ??
+              'Failed to fetch Lunar metadata'
+          )
+        );
       });
   });
 }
@@ -715,6 +742,10 @@ export async function checkAndLaunch(serverIp = null) {
       icon: 'fa-solid fa-exclamation-triangle',
     });
   });
+  if (!metadata) {
+    store.commit('setLaunching', false);
+    return;
+  }
 
   if (!(await settings.get('skipChecks'))) {
     // Check JRE
