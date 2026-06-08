@@ -5,6 +5,8 @@ export default {
   links: {
     GH_DISCUSSIONS: 'https://github.com/orgs/Solar-Tweaks/discussions',
     GITHUB: 'https://github.com/Solar-Tweaks/',
+    GITHUB_RELEASES_API:
+      'https://api.github.com/repos/sparklecatdev/moon-tweaks/releases/latest',
     YOUTUBE: 'https://www.youtube.com/channel/UCXRhlF3x02Sc8hgWnCMXnTQ',
     LUNARCLIENT: 'https://lunarclient.com/',
     SERVER_STATUS_ENDPOINT: 'https://mcapi.us/server/status',
@@ -14,6 +16,7 @@ export default {
   PATCHER: {
     PATCHER: 'solar-patcher.jar',
     CONFIG: 'config.json',
+    RELEASE_ASSET_NAME: 'solar-patcher.jar',
     CONFIG_EXAMPLE_URL:
       'https://raw.githubusercontent.com/Solar-Tweaks/SolarPatcher/main/config.example.json',
   },

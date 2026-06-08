@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { remote } from 'electron';
 import settings from 'electron-settings';
 import extractZip from 'extract-zip';
-import { readFile, stat, writeFile } from 'fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import { machineId as _machineId } from 'node-machine-id';
 import { arch } from 'os';
 import { join } from 'path';
@@ -35,43 +35,34 @@ export async function setupLunarClientDirectory() {
     icon: 'fa-solid fa-folder',
   });
 
-  const folders = ['licenses', 'offline', 'jre'];
+  const folders = ['licenses', 'offline', 'jre', 'solartweaks'];
 
-  if (!(await fs.exists(constants.DOTLUNARCLIENT))) {
-    logger.debug('Creating .lunarclient directory...');
-    await fs
-      .mkdir(constants.DOTLUNARCLIENT)
-      .then(() => {
-        logger.debug('Created .lunarclient directory');
-      })
-      .catch((error) => {
-        logger.error("Can't create .lunarclient directory", error);
-      });
-  }
+  await mkdir(constants.DOTLUNARCLIENT, { recursive: true })
+    .then(() => {
+      logger.debug('Checked .lunarclient directory');
+    })
+    .catch((error) => {
+      logger.error("Can't create .lunarclient directory", error);
+      throw error;
+    });
 
   logger.debug('Checking .lunarclient subdirectories');
 
-  for (const index in folders) {
-    const folder = folders[index];
+  for (const [index, folder] of folders.entries()) {
 
     // Launch state
     store.commit('setLaunchingState', {
       title: 'LAUNCHING...',
-      message: `CHECKING SUBFOLDERS ${parseInt(index) + 1}/${folders.length}`,
+      message: `CHECKING SUBFOLDERS ${index + 1}/${folders.length}`,
       icon: 'fa-solid fa-folder',
     });
 
-    if (!(await fs.exists(join(constants.DOTLUNARCLIENT, folder)))) {
-      logger.debug(`Creating ${folder} subdirectory...`);
-      await fs
-        .mkdir(join(constants.DOTLUNARCLIENT, folder))
-        .then(() => {
-          logger.debug(`Created ${folder} subdirectory`);
-        })
-        .catch((error) => {
-          logger.error(`Can't create ${folder} subdirectory`, error);
-        });
-    }
+    await mkdir(join(constants.DOTLUNARCLIENT, folder), {
+      recursive: true,
+    }).catch((error) => {
+      logger.error(`Can't create ${folder} subdirectory`, error);
+      throw error;
+    });
   }
 }
 
@@ -377,16 +368,34 @@ export async function checkPatcher() {
   });
 
   const release = await axios
-    .get(`${constants.API_URL}${constants.UPDATERS.INDEX}`)
+    .get(constants.links.GITHUB_RELEASES_API)
     .catch((reason) => {
-      logger.error('Failed to fetch updater index', reason);
+      logger.error('Failed to fetch latest release', reason);
     });
+  if (!release?.data) return;
+
+  const patcherAsset = release.data.assets?.find(
+    (asset) =>
+      asset?.name === constants.PATCHER.RELEASE_ASSET_NAME ||
+      asset?.label === constants.PATCHER.RELEASE_ASSET_NAME ||
+      (asset?.name?.startsWith('solar-patcher-') &&
+        asset.name.endsWith('.jar'))
+  );
+  if (!patcherAsset?.browser_download_url) {
+    logger.error('Latest release has no patcher asset');
+    return;
+  }
 
   const patcherPath = join(
     constants.DOTLUNARCLIENT,
     'solartweaks',
-    'solar-patcher.jar'
+    constants.PATCHER.PATCHER
   );
+  const latestVer = `${release.data.tag_name || ''}:${patcherAsset.name}`;
+  if (!release.data.tag_name) {
+    logger.error('Latest release version is invalid', release.data.tag_name);
+    return;
+  }
 
   // Check if file solar-patcher.jar exists
   if (
@@ -395,28 +404,21 @@ export async function checkPatcher() {
     ).catch(() => false))
   ) {
     await downloadAndSaveFile(
-      `${constants.API_URL}${constants.UPDATERS.PATCHER.replace(
-        '{version}',
-        release.data.index.stable.patcher
-      )}`,
+      patcherAsset.browser_download_url,
       patcherPath,
       'blob'
     );
-    await settings.set('patcherVersion', release.data.index.stable.patcher);
+    await settings.set('patcherVersion', latestVer);
     return; // No need to check for updates, we just downloaded the latest version
   }
 
   const patcherVer = await settings.get('patcherVersion');
-  const latestVer = release.data.index.stable.patcher;
 
   if (patcherVer === latestVer)
     return logger.info(`Patcher is up to date ${patcherVer}`);
 
   await downloadAndSaveFile(
-    `${constants.API_URL}${constants.UPDATERS.PATCHER.replace(
-      '{version}',
-      release.data.index.stable.patcher
-    )}`,
+    patcherAsset.browser_download_url,
     patcherPath,
     'blob'
   );

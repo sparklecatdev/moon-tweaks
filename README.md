@@ -71,15 +71,11 @@ If you don’t want to build from source, pre-built **Windows releases** are ava
 ## 🧪 Installation Steps
 
 1. Install Lunar Client from the official Lunar Client website.
-2. Download the following files from the Solar Tweaks release page:
-   - `solar-engine.jar`
-   - `config.json`
-   - Solar Tweaks setup executable
-3. Run the Solar Tweaks setup executable to create the Solar Tweaks folder inside your Lunar Client directory:
+2. Download and run the Solar Tweaks setup executable from the release page to create the Solar Tweaks folder inside your Lunar Client directory:
 
 ```plaintext
 C:\Users\<YourUsername>\.lunarclient
 ```
 
-4. Copy `solar-engine.jar` and `config.json` into the `solartweaks` folder inside `.lunarclient`.
-5. Launch Lunar Client. Solar Tweaks should now be injected and ready to use.
+3. Launch Solar Tweaks once. It will download `solar-patcher.jar` and create `config.json` inside `.lunarclient/solartweaks`.
+4. Launch Lunar Client. Solar Tweaks should now be injected and ready to use.

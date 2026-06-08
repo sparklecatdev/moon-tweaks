@@ -18,26 +18,39 @@ export async function checkForUpdates() {
 
   logger.info('Checking for updates...');
   const release = await axios
-    .get(`${constants.API_URL}${constants.UPDATERS.INDEX}`)
+    .get(constants.links.GITHUB_RELEASES_API)
     .catch((reason) => {
-      logger.error('Failed to fetch updater index', reason);
+      logger.error('Failed to fetch latest release', reason);
     });
+  if (!release?.data) return;
 
   const launcherVer = parseInt(remote.app.getVersion().replace(/[^0-9]+/g, ''));
-  const latestVer = parseInt(
-    release.data.index.stable.launcher.replace(/[^0-9]+/g, '')
+  const latestVersion = (release.data.tag_name || '').replace(/^v/i, '');
+  const latestVer = parseInt(latestVersion.replace(/[^0-9]+/g, ''));
+  const installerAsset = release.data.assets?.find(
+    (asset) =>
+      asset?.name?.toLowerCase().endsWith('.exe') &&
+      !asset.name.toLowerCase().endsWith('.exe.blockmap')
   );
 
+  if (!latestVersion || Number.isNaN(latestVer)) {
+    logger.error('Latest release version is invalid', release.data.tag_name);
+    return;
+  }
+
+  if (!installerAsset?.browser_download_url) {
+    logger.error('Latest release has no Windows installer asset');
+    return;
+  }
+
   if (launcherVer < latestVer) {
-    logger.info(
-      `Launcher is out of date. Latest version is ${release.data.index.stable.launcher}`
-    );
+    logger.info(`Launcher is out of date. Latest version is ${latestVersion}`);
 
     const choice = await remote.dialog.showMessageBox({
       type: 'question',
       title: 'Update available',
       message: `A new version of the launcher is available.\n\nCurrent version: ${remote.app.getVersion()}\nLatest version: ${
-        release.data.index.stable.launcher
+        latestVersion
       }\n\nWould you like to update now?`,
       buttons: ['Later', 'Update'],
     });
@@ -51,14 +64,11 @@ export async function checkForUpdates() {
         'Downloading update in the background. Please wait.\n\nThis may take a while depending on your internet speed. You can close this window and use the launcher, we will notify you when the update is ready.',
     });
 
-    const filename = `launcher-${release.data.index.stable.launcher}-update-temp.exe`;
+    const filename = `launcher-${latestVersion}-update-temp.exe`;
     const filePath = join(constants.SOLARTWEAKS_DIR, filename);
 
     await downloadAndSaveFile(
-      `${constants.API_URL}${constants.UPDATERS.LAUNCHER.replace(
-        '{version}',
-        release.data.index.stable.launcher
-      )}`,
+      installerAsset.browser_download_url,
       filePath,
       'blob'
     );
