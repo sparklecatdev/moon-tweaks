@@ -390,6 +390,7 @@ export async function fetchMetadata(
         {
           hwid: machineId,
           installation_id: installationId,
+          launcher_version: launcherVersion,
           os: process.platform,
           os_release: getCurrentOsRelease(),
           arch: arch(),
@@ -401,7 +402,7 @@ export async function fetchMetadata(
           headers: {
             'Content-Type': 'application/json',
             'User-Agent': launcherVersion
-              ? `Lunar Client/${launcherVersion}`
+              ? `Lunar Client Launcher v${launcherVersion}`
               : 'MoonTweaks',
           },
         }
