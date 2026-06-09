@@ -16,6 +16,10 @@ const INSTALLATION_ID_FILE = join(
 );
 const OFFICIAL_LAUNCHER_LATEST_URL =
   'https://launcherupdates.lunarclientcdn.com/latest.yml';
+const OFFICIAL_LAUNCHER_DOWNLOAD_URLS = [
+  'https://api.lunarclientprod.com/site/download?os=linux',
+  'https://api.lunarclientprod.com/site/download?os=macos',
+];
 
 const DEFAULT_BACKGROUND = 'https://i.ibb.co/dkPrF69/background-images.png';
 const VERSION_BACKGROUNDS = {
@@ -61,7 +65,12 @@ function extractVersionFromYaml(raw) {
   return match?.[1]?.trim() || null;
 }
 
-async function getOfficialLauncherVersion() {
+function extractVersionFromDownloadUrl(url) {
+  const match = url?.match(/[- v](\d+(?:\.\d+)+)(?:[- ][^/]*)?\.(?:dmg|appimage|exe)/i);
+  return match?.[1]?.trim() || null;
+}
+
+async function getLauncherVersionFromFeed() {
   try {
     const response = await axios.get(OFFICIAL_LAUNCHER_LATEST_URL, {
       responseType: 'text',
@@ -71,6 +80,32 @@ async function getOfficialLauncherVersion() {
   } catch {
     return null;
   }
+}
+
+async function getLauncherVersionFromDownloadUrl(url) {
+  try {
+    const response = await axios.get(url, {
+      maxRedirects: 0,
+      timeout: 5000,
+      validateStatus(status) {
+        return status >= 200 && status < 400;
+      },
+    });
+    return extractVersionFromDownloadUrl(response?.headers?.location);
+  } catch (error) {
+    return extractVersionFromDownloadUrl(error?.response?.headers?.location);
+  }
+}
+
+async function getOfficialLauncherVersion() {
+  const versions = await Promise.all([
+    getLauncherVersionFromFeed(),
+    ...OFFICIAL_LAUNCHER_DOWNLOAD_URLS.map((url) =>
+      getLauncherVersionFromDownloadUrl(url)
+    ),
+  ]);
+
+  return versions.filter(Boolean).sort(compareVersionsDesc)[0] ?? null;
 }
 
 function getDotMinecraftDirectory() {
@@ -205,9 +240,7 @@ export async function getLauncherVersion() {
   if (!localVersion) return officialVersion;
   if (!officialVersion) return localVersion;
 
-  return compareVersionsDesc(localVersion, officialVersion) <= 0
-    ? localVersion
-    : officialVersion;
+  return [localVersion, officialVersion].sort(compareVersionsDesc)[0];
 }
 
 export async function getInstallationId() {
