@@ -31,6 +31,47 @@ function getJavaBinaryName(useWindowless = false) {
   return useWindowless ? 'javaw' : 'java';
 }
 
+function getMetadataErrorMessage(payload) {
+  const launcherError = payload?.error;
+
+  if (typeof launcherError?.message === 'string' && launcherError.message) {
+    return launcherError.message;
+  }
+
+  if (typeof launcherError?.short === 'string' && launcherError.short) {
+    return launcherError.short;
+  }
+
+  if (typeof payload?.message === 'string' && payload.message) {
+    return payload.message;
+  }
+
+  return null;
+}
+
+function unwrapLaunchMetadata(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Lunar metadata response was empty');
+  }
+
+  if (payload.success === false) {
+    throw new Error(
+      getMetadataErrorMessage(payload) ?? 'Failed to fetch Lunar metadata'
+    );
+  }
+
+  const metadata =
+    payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+
+  if (!metadata?.launchTypeData || !metadata?.jre) {
+    throw new Error(
+      getMetadataErrorMessage(payload) ?? 'Lunar metadata response was invalid'
+    );
+  }
+
+  return metadata;
+}
+
 /**
  * Checks if the `.lunarclient` directory is valid
  */
@@ -182,6 +223,19 @@ export async function fetchMetadata(
   const version = overrideVersion ?? (await settings.get('version'));
   const installationId = await getInstallationId();
   const launcherVersion = await getLauncherVersion();
+
+  if (!installationId) {
+    throw new Error(
+      'Official Lunar Client installation metadata is missing. Open the official Lunar Client launcher once, then try again.'
+    );
+  }
+
+  if (!launcherVersion) {
+    throw new Error(
+      'Official Lunar Client launcher version is missing. Open the official Lunar Client launcher once, then try again.'
+    );
+  }
+
   return new Promise((resolve, reject) => {
     axios
       .post(
@@ -207,15 +261,13 @@ export async function fetchMetadata(
       )
       .then((response) => {
         logger.debug('Fetched metadata');
-        resolve(response.data);
+        resolve(unwrapLaunchMetadata(response.data));
       })
       .catch((error) => {
         logger.error('Failed to fetch metadata', error);
-        const launcherError = error?.response?.data?.error;
         reject(
           new Error(
-            launcherError?.message ??
-              launcherError?.short ??
+            getMetadataErrorMessage(error?.response?.data) ??
               error.message ??
               'Failed to fetch Lunar metadata'
           )
