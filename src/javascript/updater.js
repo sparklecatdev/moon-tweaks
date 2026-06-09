@@ -1,7 +1,6 @@
 import axios from 'axios';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import { remote } from 'electron';
-import { unlink } from 'fs/promises';
 import { join } from 'path';
 import { platform } from 'process';
 import constants from '../constants';
@@ -82,9 +81,23 @@ export async function checkForUpdates() {
 
     if (choice2.response !== 1) return; // Cancel update or closed
 
-    execSync(filePath);
+    try {
+      const child = spawn(filePath, [], {
+        detached: true,
+        stdio: 'ignore',
+      });
 
-    await unlink(filePath);
+      child.unref();
+    } catch (error) {
+      logger.error('Failed to launch update installer', error);
+      await remote.dialog.showMessageBox({
+        type: 'error',
+        title: 'Update failed',
+        message:
+          'The update installer could not be started. Please run the downloaded installer manually from your Moon Tweaks folder.',
+      });
+      return;
+    }
 
     remote.app.quit();
   } else logger.info('Launcher up to date');

@@ -169,7 +169,13 @@ export async function getLauncherVersion() {
   try {
     const raw = await readFile(LAUNCHER_SETTINGS, 'utf8');
     const parsed = JSON.parse(raw);
-    return parsed?.__internal__?.migrations?.version ?? null;
+    return (
+      parsed?.__internal__?.migrations?.version ??
+      parsed?.launcherVersion ??
+      parsed?.version ??
+      parsed?.build?.version ??
+      null
+    );
   } catch {
     return null;
   }

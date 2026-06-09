@@ -77,5 +77,5 @@ If you don’t want to build from source, pre-built **Windows releases** are ava
 C:\Users\<YourUsername>\.lunarclient
 ```
 
-3. Launch Moon Tweaks once. It will download `solar-patcher.jar` and create `config.json` inside `.lunarclient/moontweaks`.
+3. Launch Moon Tweaks once. It will download the patcher jar and create `config.json` inside `.lunarclient/moontweaks`.
 4. Launch Lunar Client. Moon Tweaks should now be injected and ready to use.

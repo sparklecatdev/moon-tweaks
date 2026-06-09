@@ -34,6 +34,10 @@ function getJavaBinaryName(useWindowless = false) {
 function getMetadataErrorMessage(payload) {
   const launcherError = payload?.error;
 
+  if (launcherError?.code === 'OUTDATED_LAUNCHER') {
+    return 'Official Lunar Client rejected this request as outdated. Update and open the official Lunar Client launcher, then try again.';
+  }
+
   if (typeof launcherError?.message === 'string' && launcherError.message) {
     return launcherError.message;
   }
@@ -49,6 +53,75 @@ function getMetadataErrorMessage(payload) {
   return null;
 }
 
+function getLaunchTypeData(metadata) {
+  const candidates = [
+    metadata?.launchTypeData,
+    metadata?.launchType?.data,
+    metadata?.launchType,
+  ];
+
+  return (
+    candidates.find((candidate) => candidate && typeof candidate === 'object') ??
+    {}
+  );
+}
+
+function getArtifacts(metadata) {
+  const launchTypeData = getLaunchTypeData(metadata);
+  const artifacts = Array.isArray(launchTypeData?.artifacts)
+    ? launchTypeData.artifacts
+    : Array.isArray(metadata?.artifacts)
+      ? metadata.artifacts
+      : [];
+
+  return artifacts.filter(
+    (artifact) => artifact && typeof artifact.name === 'string'
+  );
+}
+
+function getJreMetadata(metadata) {
+  const candidates = [metadata?.jre, metadata?.javaRuntime, metadata?.java];
+  const jre =
+    candidates.find((candidate) => candidate && typeof candidate === 'object') ??
+    {};
+
+  const extraArguments = Array.isArray(jre?.extraArguments)
+    ? jre.extraArguments
+    : Array.isArray(jre?.extra_arguments)
+      ? jre.extra_arguments
+      : Array.isArray(metadata?.extraArguments)
+        ? metadata.extraArguments
+        : [];
+
+  return {
+    ...jre,
+    extraArguments,
+  };
+}
+
+function normalizeLaunchMetadata(metadata) {
+  const launchTypeData = getLaunchTypeData(metadata);
+  const artifacts = getArtifacts(metadata);
+  const jre = getJreMetadata(metadata);
+  const mainClass =
+    typeof launchTypeData?.mainClass === 'string' && launchTypeData.mainClass
+      ? launchTypeData.mainClass
+      : typeof metadata?.mainClass === 'string'
+        ? metadata.mainClass
+        : null;
+
+  return {
+    ...metadata,
+    launchTypeData: {
+      ...launchTypeData,
+      artifacts,
+      mainClass,
+    },
+    jre,
+    licenses: Array.isArray(metadata?.licenses) ? metadata.licenses : [],
+  };
+}
+
 function unwrapLaunchMetadata(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Lunar metadata response was empty');
@@ -62,14 +135,19 @@ function unwrapLaunchMetadata(payload) {
 
   const metadata =
     payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  const normalized = normalizeLaunchMetadata(metadata);
 
-  if (!metadata?.launchTypeData || !metadata?.jre) {
+  if (
+    !normalized?.launchTypeData ||
+    !normalized?.jre ||
+    !Array.isArray(normalized.launchTypeData.artifacts)
+  ) {
     throw new Error(
       getMetadataErrorMessage(payload) ?? 'Lunar metadata response was invalid'
     );
   }
 
-  return metadata;
+  return normalized;
 }
 
 /**
@@ -320,8 +398,8 @@ export async function checkLicenses(metadata) {
  * @returns {Promise<void>}
  */
 export async function checkGameFiles(metadata) {
-  const artifacts = metadata?.launchTypeData?.artifacts;
-  if (!Array.isArray(artifacts) || artifacts.length === 0) {
+  const artifacts = getArtifacts(metadata);
+  if (artifacts.length === 0) {
     logger.error('Missing launchTypeData.artifacts in launch metadata', metadata);
     throw new Error('Launch metadata is missing game files');
   }
@@ -394,12 +472,8 @@ export async function checkNatives(metadata) {
     icon: 'fa-solid fa-file',
   });
 
-  const artifacts = Array.isArray(metadata?.launchTypeData?.artifacts)
-    ? metadata.launchTypeData.artifacts
-    : [];
-  const artifact = artifacts.find(
-    (artifact) => artifact.type === 'NATIVES'
-  );
+  const artifacts = getArtifacts(metadata);
+  const artifact = artifacts.find((entry) => entry.type === 'NATIVES');
   if (!artifact?.name) {
     logger.error('Missing natives artifact in launch metadata', metadata);
     throw new Error('Launch metadata is missing natives');
@@ -478,6 +552,8 @@ export async function checkPatcher() {
     (asset) =>
       asset?.name === constants.PATCHER.RELEASE_ASSET_NAME ||
       asset?.label === constants.PATCHER.RELEASE_ASSET_NAME ||
+      (asset?.name?.startsWith('moon-patcher-') &&
+        asset.name.endsWith('.jar')) ||
       (asset?.name?.startsWith('solar-patcher-') &&
         asset.name.endsWith('.jar'))
   );
@@ -497,7 +573,7 @@ export async function checkPatcher() {
     return;
   }
 
-  // Check if file solar-patcher.jar exists
+  // Check if the patcher file exists
   if (
     !(await stat(
       join(constants.MOONTWEAKS_DIR, constants.PATCHER.PATCHER)
@@ -724,18 +800,18 @@ export async function getJavaArguments(
       )
     );
 
-  const classPath = [
-    await lunarJarFile('lunar-assets-prod-1-optifine.jar'),
-    await lunarJarFile('lunar-assets-prod-2-optifine.jar'),
-    await lunarJarFile('lunar-assets-prod-3-optifine.jar'),
-    await lunarJarFile('lunar-prod-optifine.jar'),
-    await lunarJarFile('lunar-libs.jar'),
-    await lunarJarFile('vpatcher-prod.jar'),
-    await lunarJarFile('Optifine.jar'),
-  ];
+  const classPathArtifacts = getArtifacts(metadata).filter(
+    (artifact) => artifact.type !== 'NATIVES'
+  );
+  if (classPathArtifacts.length === 0) {
+    logger.error('No classpath artifacts found in launch metadata', metadata);
+    throw new Error('Launch metadata is missing classpath files');
+  }
 
-  if (version === '1.7')
-    classPath.push(await lunarJarFile('OptiFine_1.7.10_HD_U_E7'));
+  const classPath = [];
+  for (const artifact of classPathArtifacts) {
+    classPath.push(await lunarJarFile(artifact.name));
+  }
 
   if (!metadata?.launchTypeData?.mainClass) {
     logger.error('Missing launchTypeData.mainClass in launch metadata', metadata);

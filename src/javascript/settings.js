@@ -81,7 +81,10 @@ export default async function setupSettings() {
   }
 
   const version = await settings.get('version');
-  const launchDirectories = await settings.get('launchDirectories');
+  const storedLaunchDirectories = await settings.get('launchDirectories');
+  const launchDirectories = Array.isArray(storedLaunchDirectories)
+    ? storedLaunchDirectories
+    : defaults.launchDirectories;
   if (!launchDirectories.find((directory) => directory.version === version)) {
     await settings.set('version', defaults.version);
   }
