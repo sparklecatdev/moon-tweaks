@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { readdir, readFile, stat } from 'fs/promises';
 import { homedir, release as getOsRelease } from 'os';
 import { join } from 'path';
@@ -13,6 +14,8 @@ const INSTALLATION_ID_FILE = join(
   'launcher-cache',
   'installation-id'
 );
+const OFFICIAL_LAUNCHER_LATEST_URL =
+  'https://launcherupdates.lunarclientcdn.com/latest.yml';
 
 const DEFAULT_BACKGROUND = 'https://i.ibb.co/dkPrF69/background-images.png';
 const VERSION_BACKGROUNDS = {
@@ -51,6 +54,23 @@ function compareVersionsDesc(left, right) {
   }
 
   return right.localeCompare(left);
+}
+
+function extractVersionFromYaml(raw) {
+  const match = raw.match(/^version:\s*['"]?([^\r\n'"]+)['"]?\s*$/m);
+  return match?.[1]?.trim() || null;
+}
+
+async function getOfficialLauncherVersion() {
+  try {
+    const response = await axios.get(OFFICIAL_LAUNCHER_LATEST_URL, {
+      responseType: 'text',
+      timeout: 5000,
+    });
+    return extractVersionFromYaml(response?.data);
+  } catch {
+    return null;
+  }
 }
 
 function getDotMinecraftDirectory() {
@@ -166,19 +186,28 @@ function getLegacyJreFallbackPath() {
 }
 
 export async function getLauncherVersion() {
+  let localVersion = null;
+
   try {
     const raw = await readFile(LAUNCHER_SETTINGS, 'utf8');
     const parsed = JSON.parse(raw);
-    return (
+    localVersion =
       parsed?.__internal__?.migrations?.version ??
       parsed?.launcherVersion ??
       parsed?.version ??
       parsed?.build?.version ??
-      null
-    );
+      null;
   } catch {
-    return null;
+    localVersion = null;
   }
+
+  const officialVersion = await getOfficialLauncherVersion();
+  if (!localVersion) return officialVersion;
+  if (!officialVersion) return localVersion;
+
+  return compareVersionsDesc(localVersion, officialVersion) <= 0
+    ? localVersion
+    : officialVersion;
 }
 
 export async function getInstallationId() {
