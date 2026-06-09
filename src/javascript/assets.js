@@ -15,43 +15,29 @@ const logger = new Logger('launcher');
  * @returns {Promise<void>}
  */
 async function checkAsset(metadata, data, index) {
-  return new Promise((resolve) => {
-    const asset = data.split('\n')[index];
-    if (!/[0-9a-f]{40}/.test(asset.split(' ')[1].toLowerCase())) {
-      logger.warn(`Invalid line in index file (line ${index + 1})\n${asset}`);
-      return;
-    }
+  const asset = data.split('\n')[index];
+  const [assetPath, assetSha] = asset.trim().split(/\s+/);
+  if (!assetPath || !assetSha || !/[0-9a-f]{40}/.test(assetSha.toLowerCase())) {
+    logger.warn(`Invalid line in index file (line ${index + 1})\n${asset}`);
+    return;
+  }
 
-    const path = join(
-      constants.DOTLUNARCLIENT,
-      'textures',
-      asset.split(' ')[0]
-    );
-    const sha1 = asset.split(' ')[1].toLowerCase();
+  const path = join(constants.DOTLUNARCLIENT, 'textures', assetPath);
+  const sha1 = assetSha.toLowerCase();
+  const exists = await fs.exists(path);
 
-    fs.exists(path).then(async (exists) => {
-      if (exists) {
-        const match = await checkHash(path, sha1, 'sha1');
-        if (match) resolve();
-        else
-          await downloadAndSaveFile(
-            metadata.textures.baseUrl + sha1,
-            path,
-            'blob',
-            sha1,
-            'sha1'
-          ).then(() => resolve);
-      } else {
-        await downloadAndSaveFile(
-          metadata.textures.baseUrl + sha1,
-          path,
-          'blob',
-          sha1,
-          'sha1'
-        ).then(() => resolve);
-      }
-    });
-  });
+  if (exists) {
+    const match = await checkHash(path, sha1, 'sha1');
+    if (match) return;
+  }
+
+  await downloadAndSaveFile(
+    metadata.textures.baseUrl + sha1,
+    path,
+    'blob',
+    sha1,
+    'sha1'
+  );
 }
 
 /**
@@ -60,6 +46,15 @@ async function checkAsset(metadata, data, index) {
  * @returns {Promise<void>}
  */
 export async function downloadLunarAssets(metadata) {
+  if (
+    !metadata?.textures?.indexUrl ||
+    !metadata?.textures?.indexSha1 ||
+    !metadata?.textures?.baseUrl
+  ) {
+    logger.error('Missing textures metadata', metadata);
+    throw new Error('Launch metadata is missing Lunar assets information');
+  }
+
   store.commit('setLaunchingState', {
     title: 'LAUNCHING...',
     message: 'CHECKING LC ASSETS...',

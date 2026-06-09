@@ -230,16 +230,17 @@ export async function fetchMetadata(
  * @returns {Promise<void>}
  */
 export async function checkLicenses(metadata) {
+  const licenses = Array.isArray(metadata?.licenses) ? metadata.licenses : [];
   logger.info('Checking licenses...');
   store.commit('setLaunchingState', {
     title: 'LAUNCHING...',
-    message: `CHECKING ${metadata.licenses.length} LICENSES ...`,
+    message: `CHECKING ${licenses.length} LICENSES ...`,
     icon: 'fa-solid fa-gavel',
   });
-  for (const index in metadata.licenses) {
-    const license = metadata.licenses[index];
+  for (const index in licenses) {
+    const license = licenses[index];
     logger.debug(
-      `Checking license ${parseInt(index) + 1}/${metadata.licenses.length}`
+      `Checking license ${parseInt(index) + 1}/${licenses.length}`
     );
     const licensePath = join(
       constants.DOTLUNARCLIENT,
@@ -267,10 +268,16 @@ export async function checkLicenses(metadata) {
  * @returns {Promise<void>}
  */
 export async function checkGameFiles(metadata) {
+  const artifacts = metadata?.launchTypeData?.artifacts;
+  if (!Array.isArray(artifacts) || artifacts.length === 0) {
+    logger.error('Missing launchTypeData.artifacts in launch metadata', metadata);
+    throw new Error('Launch metadata is missing game files');
+  }
+
   logger.info(`Checking game files (MC ${await settings.get('version')})...`);
   store.commit('setLaunchingState', {
     title: 'LAUNCHING...',
-    message: `CHECKING GAMEFILES (${metadata.launchTypeData.artifacts.length})...`,
+    message: `CHECKING GAMEFILES (${artifacts.length})...`,
     icon: 'fa-solid fa-file',
   });
 
@@ -288,8 +295,8 @@ export async function checkGameFiles(metadata) {
       });
   }
 
-  for (const index in metadata.launchTypeData.artifacts) {
-    const artifact = metadata.launchTypeData.artifacts[index];
+  for (const index in artifacts) {
+    const artifact = artifacts[index];
     const gameFilePath = join(
       constants.DOTLUNARCLIENT,
       'offline',
@@ -298,7 +305,7 @@ export async function checkGameFiles(metadata) {
     );
     logger.debug(
       `Checking game file ${parseInt(index) + 1}/${
-        metadata.launchTypeData.artifacts.length
+        artifacts.length
       }`
     );
 
@@ -335,9 +342,16 @@ export async function checkNatives(metadata) {
     icon: 'fa-solid fa-file',
   });
 
-  const artifact = metadata.launchTypeData.artifacts.find(
+  const artifacts = Array.isArray(metadata?.launchTypeData?.artifacts)
+    ? metadata.launchTypeData.artifacts
+    : [];
+  const artifact = artifacts.find(
     (artifact) => artifact.type === 'NATIVES'
   );
+  if (!artifact?.name) {
+    logger.error('Missing natives artifact in launch metadata', metadata);
+    throw new Error('Launch metadata is missing natives');
+  }
   if (
     await fs.exists(
       join(
@@ -534,10 +548,15 @@ export async function patchGame() {
   const config = JSON.parse(configRaw);
   const customizations = await settings.get('customizations');
 
+  if (!config?.metadata) {
+    logger.error('Patcher config is missing metadata section', config);
+    throw new Error('Patcher config is invalid');
+  }
+
   config.metadata.removeCalls = [];
   config.metadata.isEnabled = true;
 
-  customizations.forEach((customization) => {
+  (Array.isArray(customizations) ? customizations : []).forEach((customization) => {
     // Privacy module
     if (Object.prototype.hasOwnProperty.call(customization, 'privacyModules')) {
       customization.privacyModules.forEach((module) => {
@@ -616,12 +635,20 @@ export async function getJavaArguments(
   const lunarJarFile = async (filename) =>
     `"${join(constants.DOTLUNARCLIENT, 'offline', version, filename)}"`;
 
-  const gameDir = (await settings.get('launchDirectories')).find(
+  const launchDirectories = await settings.get('launchDirectories');
+  const gameDir = (Array.isArray(launchDirectories) ? launchDirectories : []).find(
     (directory) => directory.version === version
   )?.path;
   if (!gameDir) throw new Error(`Missing launch directory for version ${version}`);
 
   const resolution = await settings.get('resolution');
+  const width = Number.parseInt(resolution?.width, 10);
+  const height = Number.parseInt(resolution?.height, 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    throw new Error('Launch resolution is invalid');
+  }
+
+  const jvmArguments = await settings.get('jvmArguments');
   const patcherPath = join(
     constants.DOTLUNARCLIENT,
     'moontweaks',
@@ -629,7 +656,7 @@ export async function getJavaArguments(
   );
 
   // Make sure the patcher exists, or else the game will crash (jvm init error)
-  stat(patcherPath)
+  await stat(patcherPath)
     .then(() =>
       args.push(
         `-javaagent:"${patcherPath}"="${join(
@@ -664,7 +691,9 @@ export async function getJavaArguments(
   }
 
   args.push(
-    ...(await settings.get('jvmArguments')).split(' '),
+    ...(typeof jvmArguments === 'string'
+      ? jvmArguments.split(' ').filter(Boolean)
+      : []),
     `-Xmx${await settings.get('ram')}m`,
     `-Djava.library.path="${natives}"`,
     `-Dsolar.launchType=${shortcut ? 'shortcut' : 'launcher'}`,
@@ -686,9 +715,9 @@ export async function getJavaArguments(
     '--texturesDir',
     `"${join(constants.DOTLUNARCLIENT, 'textures')}"`,
     '--width',
-    resolution.width,
+    width,
     '--height',
-    resolution.height
+    height
   );
 
   if (serverIp) args.push('--server', `"${serverIp}"`);

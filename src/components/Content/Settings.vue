@@ -23,7 +23,7 @@
               v-bind:key="directory.version"
             >
               <span class="settings-directories-item-version">{{
-                directory.version.length === 3
+                (directory.version || '').length === 3
                   ? '⠀' + directory.version
                   : directory.version
               }}</span>
@@ -569,15 +569,20 @@ export default {
   },
 
   async beforeMount() {
-    this.directories = await settings.get('launchDirectories');
+    this.directories = Array.isArray(await settings.get('launchDirectories'))
+      ? await settings.get('launchDirectories')
+      : [];
     this.ram.current = await settings.get('ram');
-    this.resolution = await settings.get('resolution');
-    this.actionAfterLaunch = await settings.get('actionAfterLaunch');
-    this.jvmArguments = await settings.get('jvmArguments');
-    this.jrePath = await settings.get('jrePath');
-    this.debugMode = await settings.get('debugMode');
-    this.skipChecks = await settings.get('skipChecks');
-    this.downloadedJres = await settings.get('downloadedJres');
+    this.resolution = (await settings.get('resolution')) || this.resolution;
+    this.actionAfterLaunch =
+      (await settings.get('actionAfterLaunch')) || this.actionAfterLaunch;
+    this.jvmArguments = (await settings.get('jvmArguments')) || '';
+    this.jrePath = (await settings.get('jrePath')) || '';
+    this.debugMode = Boolean(await settings.get('debugMode'));
+    this.skipChecks = Boolean(await settings.get('skipChecks'));
+    this.downloadedJres = Array.isArray(await settings.get('downloadedJres'))
+      ? await settings.get('downloadedJres')
+      : [];
 
     if (platform() !== 'win32') this.jreDownloaderEnabled = false;
 
