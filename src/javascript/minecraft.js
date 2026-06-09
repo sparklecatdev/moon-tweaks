@@ -17,6 +17,7 @@ import fs from './fs';
 import {
   getCurrentOsRelease,
   getInstallationId,
+  getLaunchDirectoriesTemplate,
   getLauncherVersion,
 } from './lunar';
 import Logger, { createMinecraftLogger } from './logger';
@@ -141,6 +142,31 @@ function normalizeLaunchMetadata(metadata) {
     jre,
     licenses: Array.isArray(metadata?.licenses) ? metadata.licenses : [],
   };
+}
+
+async function getLaunchDirectory(version) {
+  const launchDirectories = await settings.get('launchDirectories');
+  const directories = Array.isArray(launchDirectories) ? launchDirectories : [];
+  const exactMatch = directories.find((directory) => directory.version === version);
+  const fallbackPath = directories.find((directory) => directory?.path)?.path;
+
+  if (typeof exactMatch?.path === 'string' && exactMatch.path) {
+    return exactMatch.path;
+  }
+
+  if (typeof fallbackPath === 'string' && fallbackPath) {
+    logger.warn(`Missing launch directory for ${version}, using fallback path`);
+    return fallbackPath;
+  }
+
+  const template = await getLaunchDirectoriesTemplate();
+  const templatePath = template.find((directory) => directory.version === version)?.path;
+  if (typeof templatePath === 'string' && templatePath) {
+    logger.warn(`Missing saved launch directory for ${version}, using default path`);
+    return templatePath;
+  }
+
+  throw new Error(`Missing launch directory for version ${version}`);
 }
 
 function unwrapLaunchMetadata(payload) {
@@ -483,6 +509,7 @@ export async function checkLicenses(metadata) {
         'sha1'
       ).catch((error) => {
         logger.error(`Failed to download ${license.file}`, error);
+        throw error;
       });
     }
   }
@@ -549,6 +576,7 @@ export async function checkGameFiles(metadata) {
         'sha1'
       ).catch((error) => {
         logger.error(`Failed to download ${artifact.name}`, error);
+        throw error;
       });
     }
   }
@@ -615,6 +643,7 @@ export async function checkNatives(metadata) {
         })
         .catch((error) => {
           logger.error(`Failed to extract natives`, error);
+          throw error;
         });
     } else {
       logger.debug('Natives already extracted');
@@ -860,11 +889,7 @@ export async function getJavaArguments(
   const lunarJarFile = async (filename) =>
     `"${join(constants.DOTLUNARCLIENT, 'offline', version, filename)}"`;
 
-  const launchDirectories = await settings.get('launchDirectories');
-  const gameDir = (Array.isArray(launchDirectories) ? launchDirectories : []).find(
-    (directory) => directory.version === version
-  )?.path;
-  if (!gameDir) throw new Error(`Missing launch directory for version ${version}`);
+  const gameDir = await getLaunchDirectory(version);
 
   const resolution = await settings.get('resolution');
   const width = Number.parseInt(resolution?.width, 10);
@@ -994,10 +1019,15 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
   let launched = false;
   let launchFailed = false;
   let launchOutput = '';
+  let launchTimer = null;
 
   const markLaunched = async () => {
     if (launched || launchFailed) return;
     launched = true;
+    if (launchTimer) {
+      clearTimeout(launchTimer);
+      launchTimer = null;
+    }
 
     await disableRPC();
     switch (await settings.get('actionAfterLaunch')) {
@@ -1019,6 +1049,10 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
 
   proc.on('error', (error) => {
     launchFailed = true;
+    if (launchTimer) {
+      clearTimeout(launchTimer);
+      launchTimer = null;
+    }
     logger.error(error);
     store.commit('setLaunchingState', {
       title: 'Error',
@@ -1046,20 +1080,18 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
     launchOutput += data.toString('utf8').trim();
   };
 
-  proc.stdout.on('data', (data) => {
-    appendLaunchOutput(data);
-    markLaunched();
-  });
+  proc.stdout.on('data', appendLaunchOutput);
 
-  proc.stderr.on('data', (data) => {
-    appendLaunchOutput(data);
-    markLaunched();
-  });
+  proc.stderr.on('data', appendLaunchOutput);
 
   proc.once('exit', (code, signal) => {
     if (launched || launchFailed) return;
 
     launchFailed = true;
+    if (launchTimer) {
+      clearTimeout(launchTimer);
+      launchTimer = null;
+    }
     const detail = launchOutput
       ? ` ${launchOutput.split('\n').find(Boolean) ?? ''}`.trimEnd()
       : '';
@@ -1077,7 +1109,7 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
     store.commit('setLaunching', false);
   });
 
-  setTimeout(() => {
+  launchTimer = setTimeout(() => {
     markLaunched();
   }, 8000);
 
