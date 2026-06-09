@@ -144,6 +144,20 @@ function normalizeLaunchMetadata(metadata) {
   };
 }
 
+function sanitizeJavaArguments(args) {
+  const blockedArguments = new Set([
+    '-XX:+UseLargePages',
+    '-XX:-UseLargePages',
+  ]);
+
+  return args.filter((arg) => {
+    if (typeof arg !== 'string') return false;
+    if (blockedArguments.has(arg)) return false;
+    if (arg.startsWith('-XX:LargePageSizeInBytes=')) return false;
+    return true;
+  });
+}
+
 async function getLaunchDirectory(version) {
   const launchDirectories = await settings.get('launchDirectories');
   const directories = Array.isArray(launchDirectories) ? launchDirectories : [];
@@ -876,7 +890,7 @@ export async function getJavaArguments(
     throw new Error('Launch metadata is missing Java arguments');
   }
 
-  const args = [...extraArguments];
+  const args = sanitizeJavaArguments([...extraArguments]);
 
   const nativesArgument = args.findIndex((value) => value.includes('natives'));
   if (nativesArgument !== -1) {
@@ -941,9 +955,11 @@ export async function getJavaArguments(
   }
 
   args.push(
-    ...(typeof jvmArguments === 'string'
-      ? jvmArguments.split(' ').filter(Boolean)
-      : []),
+    ...sanitizeJavaArguments(
+      typeof jvmArguments === 'string'
+        ? jvmArguments.split(' ').filter(Boolean)
+        : []
+    ),
     `-Xmx${await settings.get('ram')}m`,
     `-Djava.library.path="${natives}"`,
     `-Dsolar.launchType=${shortcut ? 'shortcut' : 'launcher'}`,

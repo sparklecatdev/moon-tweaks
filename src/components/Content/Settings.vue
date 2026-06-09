@@ -362,7 +362,7 @@ export default {
       },
       {
         name: 'Zulu optimized',
-        args: '-Xverify:none -Xss2M -Xmn1G -XX:+UnlockExperimentalVMOptions -XX:+AlwaysActAsServerClassMachine -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32 -XX:G1HeapRegionSize=8M -XX:GCTimeLimit=50 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:-UsePerfData -XX:+PerfDisableSharedMem -XX:+UseLargePages -XX:+AlwaysPreTouch -XX:+EliminateLocks -XX:+AggressiveHeap -XX:+EagerJVMCI',
+        args: '-Xverify:none -Xss2M -Xmn1G -XX:+UnlockExperimentalVMOptions -XX:+AlwaysActAsServerClassMachine -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32 -XX:G1HeapRegionSize=8M -XX:GCTimeLimit=50 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:-UsePerfData -XX:+PerfDisableSharedMem -XX:+AlwaysPreTouch -XX:+EliminateLocks -XX:+AggressiveHeap -XX:+EagerJVMCI',
       },
       {
         name: 'GraalVM Community',
@@ -370,7 +370,7 @@ export default {
       },
       {
         name: 'GraalVM Enterprise',
-        args: '-Xverify:none -Xss2M -Xmn1G -XX:+UnlockExperimentalVMOptions -XX:+AlwaysActAsServerClassMachine -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32 -XX:G1HeapRegionSize=8M -XX:GCTimeLimit=50 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:-UsePerfData -XX:+PerfDisableSharedMem -XX:+UseLargePages -XX:+AlwaysPreTouch -XX:JVMCIThreads=2 -XX:+EliminateLocks -XX:+AggressiveHeap -Dgraal.TuneInlinerExploration=1 -XX:+EagerJVMCI',
+        args: '-Xverify:none -Xss2M -Xmn1G -XX:+UnlockExperimentalVMOptions -XX:+AlwaysActAsServerClassMachine -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32 -XX:G1HeapRegionSize=8M -XX:GCTimeLimit=50 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:-UsePerfData -XX:+PerfDisableSharedMem -XX:+AlwaysPreTouch -XX:JVMCIThreads=2 -XX:+EliminateLocks -XX:+AggressiveHeap -Dgraal.TuneInlinerExploration=1 -XX:+EagerJVMCI',
       },
     ],
     jrePath: '',
