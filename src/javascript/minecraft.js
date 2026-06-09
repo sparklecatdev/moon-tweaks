@@ -23,6 +23,14 @@ import Logger, { createMinecraftLogger } from './logger';
 
 const logger = new Logger('launcher');
 
+function getJavaBinaryName(useWindowless = false) {
+  if (process.platform === 'win32') {
+    return useWindowless ? 'javaw.exe' : 'java.exe';
+  }
+
+  return useWindowless ? 'javaw' : 'java';
+}
+
 /**
  * Checks if the `.lunarclient` directory is valid
  */
@@ -103,7 +111,7 @@ export async function checkJRE() {
   });
 
   const jrePath = await settings.get('jrePath');
-  const javaName = process.platform === 'win32' ? 'java.exe' : 'java';
+  const javaName = getJavaBinaryName();
 
   const exists = {
     jre: await stat(jrePath).catch(() => false), // Bin folder
@@ -705,7 +713,7 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
 
   logger.debug('Launching game with args', args);
 
-  const javaPath = join(await settings.get('jrePath'), 'java');
+  const javaPath = join(await settings.get('jrePath'), getJavaBinaryName());
   const proc = await spawn(javaPath, args, {
     cwd: join(constants.DOTLUNARCLIENT, 'offline', version),
     detached: true,

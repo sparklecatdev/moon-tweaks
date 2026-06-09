@@ -11,6 +11,10 @@ import { fetchMetadata, getJavaArguments } from './minecraft';
 
 const logger = new Logger('shortcut');
 
+function getJavawBinaryName() {
+  return process.platform === 'win32' ? 'javaw.exe' : 'javaw';
+}
+
 /**
  * Creates the wrapper
  * @param {string} version Minecraft version
@@ -46,9 +50,10 @@ export async function createShortcutWrapper(version, serverIp = null) {
   wrapperData += `cd "${versionFolder}"\n`;
   wrapperData += process.platform === 'win32' ? 'start "" ' : '';
 
-  wrapperData += `"${join(await settings.get('jrePath'), 'javaw')}" ${args.join(
-    ' '
-  )}`;
+  wrapperData += `"${join(
+    await settings.get('jrePath'),
+    getJavawBinaryName()
+  )}" ${args.join(' ')}`;
 
   await fs.writeFile(wrapperFile, wrapperData, 'utf8');
   logger.debug('Wrapper created');
