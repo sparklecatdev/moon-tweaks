@@ -150,6 +150,75 @@ function unwrapLaunchMetadata(payload) {
   return normalized;
 }
 
+async function getLocalPatcherConfig() {
+  const customizations = await settings.get('customizations');
+  const config = {
+    metadata: {
+      isEnabled: true,
+      removeCalls: [],
+    },
+  };
+
+  (Array.isArray(customizations) ? customizations : []).forEach(
+    (customization) => {
+      if (!customization || typeof customization !== 'object') return;
+
+      if (Array.isArray(customization.privacyModules)) {
+        customization.privacyModules.forEach((module) => {
+          if (typeof module !== 'string' || !module) return;
+          config[module] = {
+            isEnabled: false,
+          };
+        });
+        return;
+      }
+
+      if (
+        typeof customization.internal !== 'string' ||
+        !customization.internal ||
+        customization.internal === 'metadata'
+      ) {
+        return;
+      }
+
+      config[customization.internal] = {
+        isEnabled: false,
+        ...(customization.values &&
+        typeof customization.values === 'object' &&
+        !Array.isArray(customization.values)
+          ? customization.values
+          : {}),
+      };
+    }
+  );
+
+  return config;
+}
+
+async function getRemotePatcherConfig() {
+  return axios
+    .get(constants.PATCHER.CONFIG_EXAMPLE_URL)
+    .then((response) =>
+      response?.data && typeof response.data === 'object' ? response.data : null
+    )
+    .catch((error) => {
+      logger.warn('Failed to fetch patcher config template', error);
+      return null;
+    });
+}
+
+async function ensurePatcherConfigFile(configPath) {
+  const remoteConfig = await getRemotePatcherConfig();
+  const config = remoteConfig ?? (await getLocalPatcherConfig());
+
+  await writeFile(configPath, JSON.stringify(config, null, 2));
+  logger.info(
+    remoteConfig
+      ? 'Created default patcher config'
+      : 'Created local fallback patcher config'
+  );
+}
+
 /**
  * Checks if the `.lunarclient` directory is valid
  */
@@ -602,23 +671,30 @@ export async function checkPatcher() {
   logger.info(`Patcher updated to ${latestVer}`);
   await settings.set('patcherVersion', latestVer);
 
-  logger.debug('Updating config.json file to match new patcher config...');
-  const defaultConfigFile = (
-    await axios.get(constants.PATCHER.CONFIG_EXAMPLE_URL)
-  ).data;
-
   const configPath = join(
     constants.DOTLUNARCLIENT,
     'moontweaks',
     constants.PATCHER.CONFIG
   );
-  const config = await readFile(configPath, 'utf8');
+  const config = await readFile(configPath, 'utf8').catch(() => null);
+  if (!config) {
+    await ensurePatcherConfigFile(configPath);
+    return;
+  }
+
+  logger.debug('Updating config.json file to match new patcher config...');
+  const defaultConfigFile =
+    (await getRemotePatcherConfig()) ?? (await getLocalPatcherConfig());
 
   function merge(obj1, obj2) {
     const newObj = { ...obj1, ...obj2 };
     for (const key in newObj)
-      if (typeof newObj[key] === 'object')
-        newObj[key] = merge(obj1[key], obj2[key]);
+      if (
+        newObj[key] &&
+        typeof newObj[key] === 'object' &&
+        !Array.isArray(newObj[key])
+      )
+        newObj[key] = merge(obj1?.[key] ?? {}, obj2?.[key] ?? {});
 
     return newObj;
   }
@@ -638,13 +714,7 @@ export async function checkPatcherConfig() {
     constants.PATCHER.CONFIG
   );
   await stat(configPath).catch(async () => {
-    console.log('Creating config file');
-    await downloadAndSaveFile(
-      constants.PATCHER.CONFIG_EXAMPLE_URL,
-      configPath,
-      'text'
-    ).catch(console.error);
-    logger.info('Created default patcher config');
+    await ensurePatcherConfigFile(configPath);
   });
 }
 
@@ -744,7 +814,7 @@ export async function getJavaArguments(
     'natives'
   );
 
-  const extraArguments = metadata?.jre?.extraArguments;
+  const extraArguments = getJreMetadata(metadata).extraArguments;
   if (!Array.isArray(extraArguments)) {
     logger.error('Missing jre.extraArguments in launch metadata', metadata);
     throw new Error('Launch metadata is missing Java arguments');
