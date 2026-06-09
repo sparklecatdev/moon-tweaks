@@ -418,12 +418,11 @@ export default {
     logger.info('Loading customizations from settings');
     if (customizations) {
       customizations.forEach((savedCustomization) => {
+        if (!savedCustomization || typeof savedCustomization !== 'object') return;
+
         // Privacy module
         if (
-          Object.prototype.hasOwnProperty.call(
-            savedCustomization,
-            'privacyModules'
-          )
+          Array.isArray(savedCustomization.privacyModules)
         ) {
           const privacyModule = this.customizations.find((c) =>
             Object.prototype.hasOwnProperty.call(c, 'privacyModules')
@@ -434,7 +433,11 @@ export default {
         this.customizations.forEach((customization) => {
           if (customization.name === savedCustomization.name) {
             customization.enabled = savedCustomization.enabled;
-            if (Object.keys(customization).includes('values'))
+            if (
+              Object.keys(customization).includes('values') &&
+              savedCustomization.values &&
+              typeof savedCustomization.values === 'object'
+            )
               for (const key in customization.values)
                 customization.values[key] = savedCustomization.values[key];
           }

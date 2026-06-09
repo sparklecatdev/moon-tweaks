@@ -3,11 +3,29 @@ import { spawn } from 'child_process';
 import { remote } from 'electron';
 import { join } from 'path';
 import { platform } from 'process';
+import process from 'process';
 import constants from '../constants';
 import { downloadAndSaveFile } from './downloader';
 import Logger from './logger';
 
 const logger = new Logger('updater');
+
+function getWindowsInstallerAsset(assets) {
+  const installerAssets = (Array.isArray(assets) ? assets : []).filter(
+    (asset) =>
+      asset?.name?.toLowerCase().endsWith('.exe') &&
+      !asset.name.toLowerCase().endsWith('.exe.blockmap')
+  );
+
+  if (installerAssets.length === 0) return null;
+
+  const expectedArch = process.arch === 'x64' ? 'x64' : process.arch;
+  return (
+    installerAssets.find((asset) =>
+      asset.name.toLowerCase().includes(expectedArch)
+    ) ?? installerAssets[0]
+  );
+}
 
 /**
  * Checks for updates (for the launcher)
@@ -26,11 +44,7 @@ export async function checkForUpdates() {
   const launcherVer = parseInt(remote.app.getVersion().replace(/[^0-9]+/g, ''));
   const latestVersion = (release.data.tag_name || '').replace(/^v/i, '');
   const latestVer = parseInt(latestVersion.replace(/[^0-9]+/g, ''));
-  const installerAsset = release.data.assets?.find(
-    (asset) =>
-      asset?.name?.toLowerCase().endsWith('.exe') &&
-      !asset.name.toLowerCase().endsWith('.exe.blockmap')
-  );
+  const installerAsset = getWindowsInstallerAsset(release.data.assets);
 
   if (!latestVersion || Number.isNaN(latestVer)) {
     logger.error('Latest release version is invalid', release.data.tag_name);

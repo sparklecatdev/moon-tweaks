@@ -158,6 +158,13 @@ function sanitizeJavaArguments(args) {
   });
 }
 
+function parseJvmArguments(rawArguments) {
+  if (typeof rawArguments !== 'string' || !rawArguments.trim()) return [];
+
+  const matches = rawArguments.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  return matches.map((arg) => arg.replace(/^['"]|['"]$/g, ''));
+}
+
 async function getLaunchDirectory(version) {
   const launchDirectories = await settings.get('launchDirectories');
   const directories = Array.isArray(launchDirectories) ? launchDirectories : [];
@@ -687,10 +694,13 @@ export async function checkPatcher() {
     });
   if (!release?.data) return;
 
-  const patcherAsset = release.data.assets?.find(
+  const patcherAssets = Array.isArray(release.data.assets) ? release.data.assets : [];
+  const patcherAsset = patcherAssets.find(
     (asset) =>
       asset?.name === constants.PATCHER.RELEASE_ASSET_NAME ||
       asset?.label === constants.PATCHER.RELEASE_ASSET_NAME ||
+      asset?.name === 'moon-patcher.jar' ||
+      asset?.label === 'moon-patcher.jar' ||
       (asset?.name?.startsWith('moon-patcher-') &&
         asset.name.endsWith('.jar')) ||
       (asset?.name?.startsWith('solar-patcher-') &&
@@ -713,11 +723,7 @@ export async function checkPatcher() {
   }
 
   // Check if the patcher file exists
-  if (
-    !(await stat(
-      join(constants.MOONTWEAKS_DIR, constants.PATCHER.PATCHER)
-    ).catch(() => false))
-  ) {
+  if (!(await stat(patcherPath).catch(() => false))) {
     await downloadAndSaveFile(
       patcherAsset.browser_download_url,
       patcherPath,
@@ -825,8 +831,10 @@ export async function patchGame() {
   config.metadata.isEnabled = true;
 
   (Array.isArray(customizations) ? customizations : []).forEach((customization) => {
+    if (!customization || typeof customization !== 'object') return;
+
     // Privacy module
-    if (Object.prototype.hasOwnProperty.call(customization, 'privacyModules')) {
+    if (Array.isArray(customization.privacyModules)) {
       customization.privacyModules.forEach((module) => {
         if (!Object.prototype.hasOwnProperty.call(config, module)) return;
         config[module].isEnabled = customization.enabled;
@@ -843,7 +851,11 @@ export async function patchGame() {
     }
 
     config[customization.internal].isEnabled = customization.enabled;
-    if (Object.prototype.hasOwnProperty.call(customization, 'values')) {
+    if (
+      customization.values &&
+      typeof customization.values === 'object' &&
+      !Array.isArray(customization.values)
+    ) {
       for (const key in customization.values) {
         config[customization.internal][key] = customization.values[key];
       }
@@ -956,9 +968,7 @@ export async function getJavaArguments(
 
   args.push(
     ...sanitizeJavaArguments(
-      typeof jvmArguments === 'string'
-        ? jvmArguments.split(' ').filter(Boolean)
-        : []
+      parseJvmArguments(jvmArguments)
     ),
     `-Xmx${await settings.get('ram')}m`,
     `-Djava.library.path="${natives}"`,

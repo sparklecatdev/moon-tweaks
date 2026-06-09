@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import axios from 'axios';
 import fs from 'fs/promises';
-import { createWriteStream } from 'fs';
 // import { DownloaderHelper } from 'node-downloader-helper';
 
 import Logger from './logger';
@@ -28,7 +27,9 @@ export async function downloadAndSaveFile(
 ) {
   logger.info(`Downloading ${url}...`);
 
-  const response = await axios.get(url, { responseType: fileType });
+  const response = await axios.get(url, {
+    responseType: fileType === 'blob' ? 'arraybuffer' : fileType,
+  });
 
   if (logging) {
     logger.info(`Downloaded ${url}`);
@@ -54,26 +55,23 @@ export async function downloadAndSaveFile(
     );
     if (logging) logger.debug(`Saved to ${path}`);
     if (hash) {
-      // eslint-disable-next-line no-unused-vars
       const isMatching = await checkHash(path, hash, algorithm);
-      // Handle hash mismatch
+      if (!isMatching) {
+        await fs.unlink(path).catch(() => null);
+        throw new Error(`Downloaded file hash mismatch: ${path}`);
+      }
     }
   }
 
   if (fileType === 'blob') {
-    const output = createWriteStream(path);
-    const ws = new WritableStream(output);
-
-    let blob = new Blob([response.data], { type: 'application/zip' });
-
-    /** @type {ReadableStream} */
-    const stream = blob.stream();
-
-    await stream.pipeTo(ws);
+    await fs.writeFile(path, Buffer.from(response.data));
+    if (logging) logger.debug(`Saved to ${path}`);
     if (hash) {
-      // eslint-disable-next-line no-unused-vars
       const isMatching = await checkHash(path, hash, algorithm);
-      // Handle hash mismatch
+      if (!isMatching) {
+        await fs.unlink(path).catch(() => null);
+        throw new Error(`Downloaded file hash mismatch: ${path}`);
+      }
     }
   }
 }
