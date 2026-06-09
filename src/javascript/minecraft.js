@@ -6,7 +6,7 @@ import extractZip from 'extract-zip';
 import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import { machineId as _machineId } from 'node-machine-id';
 import { arch } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import process from 'process';
 import constants from '../constants';
 import store from '../store';
@@ -29,6 +29,27 @@ function getJavaBinaryName(useWindowless = false) {
   }
 
   return useWindowless ? 'javaw' : 'java';
+}
+
+async function resolveJavaBinPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath) return rawPath;
+
+  const javaName = getJavaBinaryName();
+  const candidates = [
+    rawPath,
+    join(rawPath, 'bin'),
+    basename(rawPath).toLowerCase() === javaName.toLowerCase()
+      ? dirname(rawPath)
+      : null,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const javaPath = join(candidate, javaName);
+    const javaStat = await stat(javaPath).catch(() => null);
+    if (javaStat?.isFile()) return candidate;
+  }
+
+  return rawPath;
 }
 
 function getMetadataErrorMessage(payload) {
@@ -298,8 +319,13 @@ export async function checkJRE() {
     icon: 'fa-solid fa-folder',
   });
 
-  const jrePath = await settings.get('jrePath');
+  const configuredJrePath = await settings.get('jrePath');
+  const jrePath = await resolveJavaBinPath(configuredJrePath);
   const javaName = getJavaBinaryName();
+
+  if (jrePath !== configuredJrePath) {
+    await settings.set('jrePath', jrePath);
+  }
 
   const exists = {
     jre: await stat(jrePath).catch(() => false), // Bin folder
@@ -941,7 +967,12 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
 
   logger.debug('Launching game with args', args);
 
-  const javaPath = join(await settings.get('jrePath'), getJavaBinaryName());
+  const resolvedJrePath = await resolveJavaBinPath(await settings.get('jrePath'));
+  if (resolvedJrePath !== (await settings.get('jrePath'))) {
+    await settings.set('jrePath', resolvedJrePath);
+  }
+
+  const javaPath = join(resolvedJrePath, getJavaBinaryName());
   const proc = await spawn(javaPath, args, {
     cwd: join(constants.DOTLUNARCLIENT, 'offline', version),
     detached: true,
@@ -960,8 +991,41 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
 
   if (debug) return await commitLaunch();
 
+  let launched = false;
+  let launchFailed = false;
+  let launchOutput = '';
+
+  const markLaunched = async () => {
+    if (launched || launchFailed) return;
+    launched = true;
+
+    await disableRPC();
+    switch (await settings.get('actionAfterLaunch')) {
+      case 'close':
+      default:
+        remote.getCurrentWindow().close();
+        break;
+      case 'hide':
+        remote.getCurrentWindow().hide();
+        break;
+      case 'keep':
+        break;
+    }
+
+    setTimeout(async () => {
+      await commitLaunch();
+    }, 1500);
+  };
+
   proc.on('error', (error) => {
+    launchFailed = true;
     logger.error(error);
+    store.commit('setLaunchingState', {
+      title: 'Error',
+      message: error?.message ?? 'Failed to start Java',
+      icon: 'fa-solid fa-exclamation-triangle',
+    });
+    store.commit('setLaunching', false);
   });
 
   proc.stdout.on('error', (error) => {
@@ -977,23 +1041,45 @@ export async function launchGame(metadata, serverIp = null, debug = false) {
     connectRPC();
   });
 
-  proc.stdout.once('data', async (/* data */) => {
-    await disableRPC();
-    switch (await settings.get('actionAfterLaunch')) {
-      case 'close':
-      default:
-        remote.getCurrentWindow().close();
-        break;
-      case 'hide':
-        remote.getCurrentWindow().hide();
-        break;
-      case 'keep':
-        break;
-    }
-    setTimeout(async () => {
-      await commitLaunch();
-    }, 1500);
+  const appendLaunchOutput = (data) => {
+    if (launchOutput.length >= 2000) return;
+    launchOutput += data.toString('utf8').trim();
+  };
+
+  proc.stdout.on('data', (data) => {
+    appendLaunchOutput(data);
+    markLaunched();
   });
+
+  proc.stderr.on('data', (data) => {
+    appendLaunchOutput(data);
+    markLaunched();
+  });
+
+  proc.once('exit', (code, signal) => {
+    if (launched || launchFailed) return;
+
+    launchFailed = true;
+    const detail = launchOutput
+      ? ` ${launchOutput.split('\n').find(Boolean) ?? ''}`.trimEnd()
+      : '';
+    const reason =
+      code !== null
+        ? `Java exited before the game started (code ${code}).`
+        : `Java exited before the game started (${signal ?? 'unknown signal'}).`;
+
+    logger.error(reason, launchOutput);
+    store.commit('setLaunchingState', {
+      title: 'Error',
+      message: `${reason}${detail ? ` ${detail}` : ''}`,
+      icon: 'fa-solid fa-exclamation-triangle',
+    });
+    store.commit('setLaunching', false);
+  });
+
+  setTimeout(() => {
+    markLaunched();
+  }, 8000);
 
   const minecraftLogger = await createMinecraftLogger(version);
   logger.debug(
