@@ -579,30 +579,39 @@ export async function getJavaArguments(
   overrideVersion = null,
   shortcut = false
 ) {
+  let version = await settings.get('version');
+  if (overrideVersion) version = overrideVersion;
+
   const natives = join(
     constants.DOTLUNARCLIENT,
     'offline',
-    await settings.get('version'),
+    version,
     'natives'
   );
 
-  const args = [...metadata.jre.extraArguments];
+  const extraArguments = metadata?.jre?.extraArguments;
+  if (!Array.isArray(extraArguments)) {
+    logger.error('Missing jre.extraArguments in launch metadata', metadata);
+    throw new Error('Launch metadata is missing Java arguments');
+  }
+
+  const args = [...extraArguments];
 
   const nativesArgument = args.findIndex((value) => value.includes('natives'));
-  args[nativesArgument] = args[nativesArgument].replace(
-    'natives',
-    `"${natives}"`
-  );
-
-  let version = await settings.get('version');
-  if (overrideVersion) version = overrideVersion;
+  if (nativesArgument !== -1) {
+    args[nativesArgument] = args[nativesArgument].replace(
+      'natives',
+      `"${natives}"`
+    );
+  }
 
   const lunarJarFile = async (filename) =>
     `"${join(constants.DOTLUNARCLIENT, 'offline', version, filename)}"`;
 
   const gameDir = (await settings.get('launchDirectories')).find(
     (directory) => directory.version === version
-  ).path;
+  )?.path;
+  if (!gameDir) throw new Error(`Missing launch directory for version ${version}`);
 
   const resolution = await settings.get('resolution');
   const patcherPath = join(
@@ -641,6 +650,11 @@ export async function getJavaArguments(
   if (version === '1.7')
     classPath.push(await lunarJarFile('OptiFine_1.7.10_HD_U_E7'));
 
+  if (!metadata?.launchTypeData?.mainClass) {
+    logger.error('Missing launchTypeData.mainClass in launch metadata', metadata);
+    throw new Error('Launch metadata is missing the main class');
+  }
+
   args.push(
     ...(await settings.get('jvmArguments')).split(' '),
     `-Xmx${await settings.get('ram')}m`,
@@ -648,7 +662,7 @@ export async function getJavaArguments(
     `-Dsolar.launchType=${shortcut ? 'shortcut' : 'launcher'}`,
     '-cp',
     classPath.join(process.platform == 'win32' ? ';' : ':'),
-    metadata.launchTypeData.mainClass,
+    metadata?.launchTypeData?.mainClass,
     '--version',
     version,
     '--accessToken',
